@@ -282,7 +282,7 @@ bool getSecureFlashData() {
     static SecureQSPIFBlockDevice secure_root;
     secure_root.init();
     // read secure sector 2 ( address 1 << 13 )
-    ret = secure_root.readSecure(temp_buf, (1 << 13), sizeof(temp_buf));
+    ret = secure_root.readSecure(temp_buf, (1 << 13), sizeof(OptaBoardInfo));
     memcpy(&info, &temp_buf[1], sizeof(OptaBoardInfo));
     if (info.magic == OTP_QSPI_MAGIC) {
       _boardInfo = (uint8_t*)&info;

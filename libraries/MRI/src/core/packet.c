@@ -1,4 +1,4 @@
-/* Copyright 2022 Adam Green (https://github.com/adamgreen/)
+/* Copyright 2014 Adam Green (https://github.com/adamgreen/)
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -13,21 +13,14 @@
    limitations under the License.
 */
 /* 'Class' to manage the sending and receiving of packets to/from gdb.  Takes care of crc and ack/nak handling too. */
+#include <string.h>
 #include <stdint.h>
-#include <core/core.h>
 #include <core/hex_convert.h>
 #include <core/platforms.h>
 #include <core/packet.h>
 
 
-void Packet_Init(Packet* pPacket, char* pBufferStart, size_t bufferSize)
-{
-    Buffer_Init(&pPacket->dataBuffer, pBufferStart+1, bufferSize-4);
-    Buffer_Init(&pPacket->packetBuffer, pBufferStart, bufferSize);
-}
-
-
-static void initPacketStructure(Packet* pPacket);
+static void initPacketStructure(Packet* pPacket, Buffer* pBuffer);
 static void getMostRecentPacket(Packet* pPacket);
 static void getPacketDataAndExpectedChecksum(Packet* pPacket);
 static void waitForStartOfNextPacket(Packet* pPacket);
@@ -35,16 +28,14 @@ static char getNextCharFromGdb(Packet* pPacket);
 static int  getPacketData(Packet* pPacket);
 static void clearChecksum(Packet* pPacket);
 static void updateChecksum(Packet* pPacket, char nextChar);
-static int  isEscapePrefixChar(char charToCheck);
-static char unescapeChar(char charToUnescape);
 static void extractExpectedChecksum(Packet* pPacket);
 static int  isChecksumValid(Packet* pPacket);
 static void sendACKToGDB(void);
 static void sendNAKToGDB(void);
 static void resetBufferToEnableFutureReadingOfValidPacketData(Packet* pPacket);
-void Packet_GetFromGDB(Packet* pPacket)
+void Packet_GetFromGDB(Packet* pPacket, Buffer* pBuffer)
 {
-    initPacketStructure(pPacket);
+    initPacketStructure(pPacket, pBuffer);
     do
     {
         getMostRecentPacket(pPacket);
@@ -53,12 +44,10 @@ void Packet_GetFromGDB(Packet* pPacket)
     resetBufferToEnableFutureReadingOfValidPacketData(pPacket);
 }
 
-static void initPacketStructure(Packet* pPacket)
+static void initPacketStructure(Packet* pPacket, Buffer* pBuffer)
 {
-    pPacket->lastChar = '\0';
-    pPacket->calculatedChecksum = 0;
-    pPacket->expectedChecksum = 0;
-    Buffer_Reset(&pPacket->packetBuffer);
+    memset(pPacket, 0, sizeof(*pPacket));
+    pPacket->pBuffer = pBuffer;
 }
 
 static void getMostRecentPacket(Packet* pPacket)
@@ -110,21 +99,13 @@ static int getPacketData(Packet* pPacket)
 {
     char nextChar;
 
-    Buffer_Reset(&pPacket->dataBuffer);
+    Buffer_Reset(pPacket->pBuffer);
     clearChecksum(pPacket);
     nextChar = getNextCharFromGdb(pPacket);
-    while (Buffer_BytesLeft(&pPacket->dataBuffer) > 0 && nextChar != '$' && nextChar != '#')
+    while (Buffer_BytesLeft(pPacket->pBuffer) > 0 && nextChar != '$' && nextChar != '#')
     {
         updateChecksum(pPacket, nextChar);
-        if (isEscapePrefixChar(nextChar))
-        {
-            nextChar = getNextCharFromGdb(pPacket);
-            if (nextChar == '$' || nextChar == '#')
-                break;
-            updateChecksum(pPacket, nextChar);
-            nextChar = unescapeChar(nextChar);
-        }
-        Buffer_WriteChar(&pPacket->dataBuffer, nextChar);
+        Buffer_WriteChar(pPacket->pBuffer, nextChar);
         nextChar = getNextCharFromGdb(pPacket);
     }
 
@@ -140,16 +121,6 @@ static void clearChecksum(Packet* pPacket)
 static void updateChecksum(Packet* pPacket, char nextChar)
 {
     pPacket->calculatedChecksum += (unsigned char)nextChar;
-}
-
-static int isEscapePrefixChar(char charToCheck)
-{
-    return charToCheck == '}';
-}
-
-static char unescapeChar(char charToUnescape)
-{
-    return charToUnescape ^ 0x20;
 }
 
 static void extractExpectedChecksum(Packet* pPacket)
@@ -189,25 +160,24 @@ static void sendNAKToGDB(void)
 
 static void resetBufferToEnableFutureReadingOfValidPacketData(Packet* pPacket)
 {
-    Buffer_SetEndOfBuffer(&pPacket->dataBuffer);
-    Buffer_Reset(&pPacket->dataBuffer);
+    Buffer_SetEndOfBuffer(pPacket->pBuffer);
+    Buffer_Reset(pPacket->pBuffer);
 }
 
 
-static void completePacket(Packet* pPacket);
-static void storePacketHeaderByte(Packet* pPacket);
-static void processPacketData(Packet* pPacket);
-static void storePacketChecksum(Packet* pPacket);
 static void sendPacket(Packet* pPacket);
+static void sendPacketHeaderByte(void);
+static void sendPacketData(Packet* pPacket);
+static void sendPacketChecksum(Packet* pPacket);
+static void sendByteAsHex(unsigned char byte);
 static int  receiveCharAfterSkippingControlC(Packet* pPacket);
-void Packet_SendToGDB(Packet* pPacket)
+void Packet_SendToGDB(Packet* pPacket, Buffer* pBuffer)
 {
     char  charFromGdb;
 
     /* Keeps looping until GDB sends back the '+' packet acknowledge character.  If GDB sends a '$' then it is trying
        to send a packet so cancel this send attempt. */
-    initPacketStructure(pPacket);
-    completePacket(pPacket);
+    initPacketStructure(pPacket, pBuffer);
     do
     {
         sendPacket(pPacket);
@@ -215,46 +185,42 @@ void Packet_SendToGDB(Packet* pPacket)
     } while (charFromGdb != '+' && charFromGdb != '$');
 }
 
-static void completePacket(Packet* pPacket)
-{
-    /* Complete packet by adding '$' header and '#' checksum terminator -> "$<DataInHex>#<2HexDigitsOfChecksum>" */
-    Buffer_Reset(&pPacket->dataBuffer);
-    clearChecksum(pPacket);
-
-    storePacketHeaderByte(pPacket);
-    processPacketData(pPacket);
-    storePacketChecksum(pPacket);
-
-    Buffer_SetEndOfBuffer(&pPacket->packetBuffer);
-}
-
-static void storePacketHeaderByte(Packet* pPacket)
-{
-    Buffer_WriteChar(&pPacket->packetBuffer, '$');
-}
-
-static void processPacketData(Packet* pPacket)
-{
-    size_t length = 0;
-    while (Buffer_BytesLeft(&pPacket->dataBuffer) > 0)
-    {
-        char currChar = Buffer_ReadChar(&pPacket->dataBuffer);
-        updateChecksum(pPacket, currChar);
-        length++;
-    }
-    Buffer_Advance(&pPacket->packetBuffer, length);
-}
-
-static void storePacketChecksum(Packet* pPacket)
-{
-    Buffer_WriteChar(&pPacket->packetBuffer, '#');
-    Buffer_WriteByteAsHex(&pPacket->packetBuffer, pPacket->calculatedChecksum);
-}
-
 static void sendPacket(Packet* pPacket)
 {
-    Buffer_Reset(&pPacket->packetBuffer);
-    Platform_CommSendBuffer(&pPacket->packetBuffer);
+    /* Send packet of format: "$<DataInHex>#<1ByteChecksumInHex>" */
+    Buffer_Reset(pPacket->pBuffer);
+    clearChecksum(pPacket);
+
+    sendPacketHeaderByte();
+    sendPacketData(pPacket);
+    sendPacketChecksum(pPacket);
+}
+
+static void sendPacketHeaderByte(void)
+{
+    Platform_CommSendChar('$');
+}
+
+static void sendPacketData(Packet* pPacket)
+{
+    while (Buffer_BytesLeft(pPacket->pBuffer) > 0)
+    {
+        char currChar = Buffer_ReadChar(pPacket->pBuffer);
+        Platform_CommSendChar(currChar);
+        updateChecksum(pPacket, currChar);
+    }
+}
+
+static void sendPacketChecksum(Packet* pPacket)
+{
+    Platform_CommSendChar('#');
+    sendByteAsHex(pPacket->calculatedChecksum);
+}
+
+static void sendByteAsHex(unsigned char byte)
+{
+    Platform_CommSendChar(NibbleToHexChar[EXTRACT_HI_NIBBLE(byte)]);
+    Platform_CommSendChar(NibbleToHexChar[EXTRACT_LO_NIBBLE(byte)]);
 }
 
 static int receiveCharAfterSkippingControlC(Packet* pPacket)
@@ -262,19 +228,11 @@ static int receiveCharAfterSkippingControlC(Packet* pPacket)
     static const int controlC = 0x03;
     int              nextChar;
 
-    nextChar = getNextCharFromGdb(pPacket);
-    while (nextChar == controlC)
+    do
     {
-        ControlCEncountered();
         nextChar = getNextCharFromGdb(pPacket);
     }
+    while (nextChar == controlC);
 
     return nextChar;
-}
-
-
-__attribute__((weak)) void Platform_CommSendBuffer(Buffer* pBuffer)
-{
-    while (Buffer_BytesLeft(pBuffer))
-        Platform_CommSendChar(Buffer_ReadChar(pBuffer));
 }

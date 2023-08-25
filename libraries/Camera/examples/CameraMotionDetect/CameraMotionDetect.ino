@@ -1,12 +1,6 @@
 #include "camera.h"
-
-// uncomment the correct camera in use
-#include "hm0360.h"
-HM0360 himax;
-
-// #include "himax.h"
-// HM01B0 himax;
-
+#include "himax.h"
+HM01B0 himax;
 Camera cam(himax);
 
 #ifdef ARDUINO_NICLA_VISION

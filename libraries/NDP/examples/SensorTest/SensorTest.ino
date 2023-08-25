@@ -37,7 +37,6 @@ int loopCounter = 0;
 void setup() {
   int s;
   uint8_t __attribute__((aligned(4))) sensor_data[16];
-  int retry_sensor_init = 0;
 
   Serial.begin(115200);
   nicla::begin();
@@ -57,68 +56,51 @@ void setup() {
   NDP.turnOnMicrophone();
   NDP.interrupts();
 
-  do {
-    if (retry_sensor_init) {
-      Serial.print("Reinit attempt ");
-      Serial.println(retry_sensor_init);
-    }
-    // 1st read will place the sensor in SPI mode, 2nd read is real read
-    s = NDP.sensorBMI270Read(0x0, 1, sensor_data);
-    CHECK_STATUS(s);
+  // 1st read will place the sensor in SPI mode, 2nd read is real read
+  s = NDP.sensorBMI270Read(0x0, 1, sensor_data);
+  CHECK_STATUS(s);
 
-    s = NDP.sensorBMI270Read(0x0, 1, sensor_data);
-    CHECK_STATUS(s);
-    Serial.print("BMI270 chip ID is (expected is 0x24): ");
-    Serial.println(sensor_data[0], HEX);
+  s = NDP.sensorBMI270Read(0x0, 1, sensor_data);
+  CHECK_STATUS(s);
+  Serial.print("BMI270 chip ID is (expected is 0x24): ");
+  Serial.println(sensor_data[0], HEX);
 
-    // soft reset
-    s = NDP.sensorBMI270Write(0x7e, 0xb6);
-    CHECK_STATUS(s);
-    delay(20);
+  // soft reset
+  s = NDP.sensorBMI270Write(0x7e, 0x6b);
+  CHECK_STATUS(s);
+  delay(20); //delay 20ms much longer than reqired 450us
 
-    // back to SPI mode after software reset
-    s = NDP.sensorBMI270Read(0x0, 1, sensor_data);
-    CHECK_STATUS(s);
-    s = NDP.sensorBMI270Read(0x0, 1, sensor_data);
-    CHECK_STATUS(s);
+  // back to SPI mode after software reset
+  s = NDP.sensorBMI270Read(0x0, 1, sensor_data);
+  CHECK_STATUS(s);
+  s = NDP.sensorBMI270Read(0x0, 1, sensor_data);
+  CHECK_STATUS(s);
 
-    s = NDP.sensorBMI270Read(0x21, 1, sensor_data);
-    CHECK_STATUS(s);
-    Serial.print("[After reset] BMI270 Status Register at address 0x21 is (expected is 0x00): 0x");
-    Serial.println(sensor_data[0], HEX);
+  // disable PWR_CONF.adv_power_save
+  s = NDP.sensorBMI270Write(0x7c, 0x00);
+  CHECK_STATUS(s);
+  delay(20); //delay 20ms much longer than reqired 450us
 
-    // disable PWR_CONF.adv_power_save
-    s = NDP.sensorBMI270Write(0x7c, 0x00);
-    CHECK_STATUS(s);
-    delay(20);
+  // prepare config load INIT_CTRL = 0x00
+  s = NDP.sensorBMI270Write(0x59, 0x00);
+  CHECK_STATUS(s);
 
-    // prepare config load INIT_CTRL = 0x00
-    s = NDP.sensorBMI270Write(0x59, 0x00);
-    CHECK_STATUS(s);
-    delay(200);
+  // burst write to INIT_DATA
+  Serial.print("BMI270 init starting...");
+  s = NDP.sensorBMI270Write(0x5e,
+            sizeof(bmi270_maximum_fifo_config_file),
+            (uint8_t*)bmi270_maximum_fifo_config_file);
+  CHECK_STATUS(s);
+  Serial.println("... done!");
 
-    // burst write to INIT_DATA
-    Serial.print("BMI270 init starting...");
-    s = NDP.sensorBMI270Write(0x5e,
-              sizeof(bmi270_maximum_fifo_config_file),
-              (uint8_t*)bmi270_maximum_fifo_config_file);
-    CHECK_STATUS(s);
-    Serial.println("... done!");
+  s = NDP.sensorBMI270Write(0x59, 0x01);
+  CHECK_STATUS(s);
+  delay(200);
 
-    s = NDP.sensorBMI270Write(0x59, 0x01);
-    CHECK_STATUS(s);
-    delay(200);
-
-    s = NDP.sensorBMI270Read(0x21, 1, sensor_data);
-    CHECK_STATUS(s);
-    Serial.print("BMI270 Status Register at address 0x21 is (expected is 0x01): 0x");
-    Serial.println(sensor_data[0], HEX);
-    if (sensor_data[0] != 1) {
-      retry_sensor_init++;
-    } else {
-      retry_sensor_init = 0;
-    }
-  } while (retry_sensor_init);
+  s = NDP.sensorBMI270Read(0x21, 1, sensor_data);
+  CHECK_STATUS(s);
+  Serial.print("BMI270 Status Register at address 0x21 is (expected is 0x01): 0x");
+  Serial.println(sensor_data[0], HEX);
 
   // configuring device to normal power mode with both Accelerometer and gyroscope working
   s = NDP.sensorBMI270Write(0x7d, 0x0e);

@@ -1,4 +1,4 @@
-/* Copyright 2022 Adam Green (https://github.com/adamgreen/)
+/* Copyright 2017 Adam Green (https://github.com/adamgreen/)
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
    limitations under the License.
 */
 /* Handlers for memory related gdb commands. */
-#include <core/platforms.h>
 #include <core/buffer.h>
 #include <core/core.h>
 #include <core/mri.h>
@@ -48,7 +47,7 @@ uint32_t HandleMemoryReadCommand(void)
         return 0;
     }
 
-    InitPacketBuffers();
+    InitBuffer();
     result = ReadMemoryIntoHexBuffer(pBuffer, ADDR32_TO_POINTER(addressLength.address), addressLength.length);
     if (result == 0)
         PrepareStringResponse(MRI_ERROR_MEMORY_ACCESS_FAILURE);
@@ -112,8 +111,6 @@ uint32_t HandleBinaryMemoryWriteCommand(void)
 {
     Buffer*        pBuffer = GetBuffer();
     AddressLength  addressLength;
-    uint32_t*      pv;
-    uint32_t       length;
 
     __try
     {
@@ -125,18 +122,14 @@ uint32_t HandleBinaryMemoryWriteCommand(void)
         return 0;
     }
 
-    pv = ADDR32_TO_POINTER(addressLength.address);
-    length = addressLength.length;
-
-    if (WriteBinaryBufferToMemory(pBuffer, pv, length))
+    if (WriteBinaryBufferToMemory(pBuffer, ADDR32_TO_POINTER(addressLength.address), addressLength.length))
     {
-        Platform_SyncICacheToDCache(pv, length);
         PrepareStringResponse("OK");
     }
     else
     {
         if (Buffer_OverrunDetected(pBuffer))
-            PrepareStringResponse(MRI_ERROR_BUFFER_OVERRUN);
+            PrepareStringResponse( MRI_ERROR_BUFFER_OVERRUN);
         else
             PrepareStringResponse(MRI_ERROR_MEMORY_ACCESS_FAILURE);
     }

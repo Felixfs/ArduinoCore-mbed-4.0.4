@@ -1,4 +1,4 @@
-/* Copyright 2022 Adam Green (https://github.com/adamgreen/)
+/* Copyright 2020 Adam Green (https://github.com/adamgreen/)
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@
 #include <stdint.h>
 #include <core/buffer.h>
 #include <core/context.h>
-#include <core/mri.h>
 
 
 typedef struct
@@ -33,7 +32,7 @@ typedef struct
 /* Real name of functions are in mri namespace. */
 void    mriDebugException(MriContext* pContext);
 
-void    mriCore_InitPacketBuffers(void);
+void    mriCore_InitBuffer(void);
 Buffer* mriCore_GetBuffer(void);
 Buffer* mriCore_GetInitializedBuffer(void);
 void    mriCore_PrepareStringResponse(const char* pErrorString);
@@ -41,14 +40,11 @@ void    mriCore_PrepareStringResponse(const char* pErrorString);
 
 int     mriCore_WasControlCFlagSentFromGdb(void);
 void    mriCore_RecordControlCFlagSentFromGdb(int controlCFlag);
-int     mriCore_WasControlCEncountered(void);
-void    mriCore_ControlCEncountered(void);
 int     mriCore_WasSemihostCallCancelledByGdb(void);
 void    mriCore_FlagSemihostCallAsHandled(void);
 int     mriCore_IsFirstException(void);
 int     mriCore_WasSuccessfullyInit(void);
 void    mriCore_RequestResetOnNextContinue(void);
-int     mriCore_WasResetOnNextContinueRequested(void);
 void    mriCore_SetSingleSteppingRange(const AddressRange* pRange);
 
 MriContext* mriCore_GetContext(void);
@@ -66,24 +62,19 @@ void    mriCore_GdbCommandHandlingLoop(void);
 typedef int (*TempBreakpointCallbackPtr)(void*);
 int     mriCore_SetTempBreakpoint(uint32_t breakpointAddress, TempBreakpointCallbackPtr pCallback, void* pvContext);
 
-void    mriCoreSetDebuggerHooks(MriDebuggerHookPtr pEnteringHook, MriDebuggerHookPtr pLeavingHook, void* pvContext);
-
 
 /* Macroes which allow code to drop the mri namespace prefix. */
-#define InitPacketBuffers               mriCore_InitPacketBuffers
+#define InitBuffer                      mriCore_InitBuffer
 #define GetBuffer                       mriCore_GetBuffer
 #define GetInitializedBuffer            mriCore_GetInitializedBuffer
 #define PrepareStringResponse           mriCore_PrepareStringResponse
 #define WasControlCFlagSentFromGdb      mriCore_WasControlCFlagSentFromGdb
 #define RecordControlCFlagSentFromGdb   mriCore_RecordControlCFlagSentFromGdb
-#define WasControlCEncountered          mriCore_WasControlCEncountered
-#define ControlCEncountered             mriCore_ControlCEncountered
 #define WasSemihostCallCancelledByGdb   mriCore_WasSemihostCallCancelledByGdb
 #define FlagSemihostCallAsHandled       mriCore_FlagSemihostCallAsHandled
 #define IsFirstException                mriCore_IsFirstException
 #define WasSuccessfullyInit             mriCore_WasSuccessfullyInit
 #define RequestResetOnNextContinue      mriCore_RequestResetOnNextContinue
-#define WasResetOnNextContinueRequested mriCore_WasResetOnNextContinueRequested
 #define SetSingleSteppingRange          mriCore_SetSingleSteppingRange
 #define GetContext                      mriCore_GetContext
 #define SetContext                      mriCore_SetContext
@@ -95,7 +86,6 @@ void    mriCoreSetDebuggerHooks(MriDebuggerHookPtr pEnteringHook, MriDebuggerHoo
 #define SendPacketToGdb                 mriCore_SendPacketToGdb
 #define GdbCommandHandlingLoop          mriCore_GdbCommandHandlingLoop
 #define SetTempBreakpoint               mriCore_SetTempBreakpoint
-#define SetDebuggerHooks                mriCoreSetDebuggerHooks
 
 /* Macro to convert 32-bit addresses sent from GDB to pointer. */
 #if _LP64
